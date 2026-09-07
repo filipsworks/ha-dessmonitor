@@ -8,7 +8,6 @@ from typing import Any, cast
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -16,7 +15,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from . import DessMonitorDataUpdateCoordinator
 from .const import DOMAIN
 from .device_support.device_registry import map_control_field
-from .entity_loader import async_setup_dynamic_entities
+from .entity_loader import async_setup_dynamic_entities, disable_replaced_entities
 from .utils import create_device_info
 
 _LOGGER = logging.getLogger(__name__)
@@ -35,7 +34,7 @@ async def async_setup_entry(
 
     async def _build() -> list[ButtonEntity]:
         entities = await _async_build_button_entities(coordinator, known_entities)
-        _disable_replaced_selects(hass, config_entry, entities)
+        disable_replaced_entities(hass, config_entry, entities, "select")
         return entities
 
     await async_setup_dynamic_entities(
@@ -49,29 +48,6 @@ async def async_setup_entry(
         # the background so dozens of reads cannot delay integration startup.
         defer_initial=True,
     )
-
-
-def _disable_replaced_selects(
-    hass: HomeAssistant,
-    config_entry: ConfigEntry,
-    buttons: list[ButtonEntity],
-) -> None:
-    """Hide legacy one-option selects now represented by action buttons."""
-    registry = er.async_get(hass)
-    for button in buttons:
-        if not button.unique_id:
-            continue
-        entity_id = registry.async_get_entity_id("select", DOMAIN, button.unique_id)
-        if entity_id is None:
-            continue
-        entry = registry.async_get(entity_id)
-        if entry is None or entry.config_entry_id != config_entry.entry_id:
-            continue
-        if entry.disabled_by is None:
-            registry.async_update_entity(
-                entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION
-            )
-            _LOGGER.info("Disabled replaced legacy entity %s", entity_id)
 
 
 async def _async_build_button_entities(

@@ -68,6 +68,66 @@ SENSOR_TITLE_MAPPINGS: dict[str, str] = {
     "Current charging priority": "Charger Source Priority",
 }
 
+# Configurable ranges documented in the ANJ-HHS-11KW-48V manual (LCD setting
+# groups F0-F3), keyed by control field id as ``(min, max, step)``.
+#
+# The cloud API returns ``hint: null`` for every control on this collector, so
+# without this table ``number`` entities fall back to a guessed range. Some of
+# those guesses are wrong in both directions: "Min" controls keep Home
+# Assistant's 0-100 default even though the device reports 120 (Eq timeout) and
+# accepts up to 900, while a current control is capped at 200A when the
+# hardware accepts 500A.
+#
+# Only the outer limits are encoded. The manual also defines cross-field limits
+# (floating <= bulk voltage, utility charging current <= total charging
+# current, and the Max[]/Min[] chains around the utility/battery switch-over
+# points). Those are left to the inverter, which rejects an out-of-range write
+# on its own; mirroring them here would mean five entities reading each other's
+# state on every render for no added protection.
+CONTROL_RANGES: dict[str, tuple[float, float, float]] = {
+    # --- F1 AC output ---
+    # F1-12 OP2 overload warning point.
+    "bse_eybond_read_55429": (10.0, 100.0, 1.0),
+    # --- F2 battery ---
+    # F2-03 bulk (C.V) charging voltage.
+    "bat_eybond_read_43991": (48.0, 62.0, 0.1),
+    # F2-04 floating charging voltage.
+    "bat_eybond_read_43992": (48.0, 62.0, 0.1),
+    # F2-16 bulk charging time; 0 selects the inverter's automatic timing.
+    "bat_eybond_read_43993": (0.0, 900.0, 5.0),
+    # F2-09 total charging current (11kW model; the 8.5kW model tops out at 140A).
+    "bat_eybond_read_43994": (10.0, 160.0, 1.0),
+    # F2-10 utility charging current.
+    "bat_eybond_read_43995": (5.0, 120.0, 1.0),
+    # F2-25 max battery discharge current; 0 disables the limit.
+    "bat_eybond_read_43996": (0.0, 500.0, 1.0),
+    # F2-06 voltage point back to battery mode; 0 means "battery fully charged".
+    "bat_eybond_read_43997": (0.0, 62.0, 0.1),
+    # F2-05 voltage point back to utility.
+    "bat_eybond_read_43998": (44.0, 57.2, 0.1),
+    # F2-07/F2-08 off-grid cut-off voltage.
+    "bat_eybond_read_43999": (40.0, 54.0, 0.1),
+    # F2-05 utility switch-over as SOC (battery with communication).
+    "bat_eybond_read_44000": (5.0, 96.0, 1.0),
+    # F2-06 battery switch-back as SOC.
+    "bat_eybond_read_44001": (10.0, 100.0, 1.0),
+    # F2-07/F2-08 off-grid cut-off SOC.
+    "bat_eybond_read_44002": (0.0, 95.0, 1.0),
+    # F2-18 equalization voltage.
+    "bat_eybond_read_44004": (48.0, 62.0, 0.1),
+    # F2-19 equalization duration.
+    "bat_eybond_read_44005": (0.0, 900.0, 5.0),
+    # F2-20 equalization timeout.
+    "bat_eybond_read_44006": (0.0, 900.0, 5.0),
+    # F2-21 equalization interval.
+    "bat_eybond_read_44007": (1.0, 90.0, 1.0),
+    # F2-07 OP1 off-grid cut-off voltage.
+    "bat_eybond_read_55431": (40.0, 54.0, 0.1),
+    # F2-07 OP1 off-grid cut-off SOC.
+    "bat_eybond_read_55433": (0.0, 95.0, 1.0),
+}
+
+
 VALUE_TRANSFORMATIONS: dict = {}
 
 PARAMETER_SENSOR_NAMES: set[str] = set()
@@ -79,5 +139,6 @@ DEVCODE_CONFIG = {
     "operating_mode_mapping": OPERATING_MODE_MAPPING,
     "sensor_title_mappings": SENSOR_TITLE_MAPPINGS,
     "value_transformations": VALUE_TRANSFORMATIONS,
+    "control_ranges": CONTROL_RANGES,
     "parameter_sensor_names": PARAMETER_SENSOR_NAMES,
 }

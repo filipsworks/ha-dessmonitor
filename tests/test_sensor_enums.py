@@ -9,8 +9,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.dessmonitor.button import _disable_replaced_selects
 from custom_components.dessmonitor.const import DOMAIN
+from custom_components.dessmonitor.entity_loader import disable_replaced_entities
 from custom_components.dessmonitor.sensor import DessMonitorSensor
 
 
@@ -42,9 +42,7 @@ def _enum_sensor(title: str, value: str) -> DessMonitorSensor:
         ("Charger Source Priority", "PV is at the same level as mains"),
     ],
 )
-def test_enum_contract_accepts_live_cloud_values(
-    title: str, live_value: str
-) -> None:
+def test_enum_contract_accepts_live_cloud_values(title: str, live_value: str) -> None:
     """Known and firmware-specific live states must satisfy HA's enum contract."""
     entity = _enum_sensor(title, live_value)
 
@@ -67,7 +65,7 @@ async def test_replaced_one_option_select_is_disabled_not_deleted(
     button = MagicMock()
     button.unique_id = unique_id
 
-    _disable_replaced_selects(hass, config_entry, [button])
+    disable_replaced_entities(hass, config_entry, [button], "select")
 
     preserved = registry.async_get(legacy.entity_id)
     assert preserved is not None

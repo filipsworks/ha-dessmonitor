@@ -134,6 +134,19 @@ def map_control_field(devcode: int, api_field_name: str) -> str:
     return control_mappings.get(api_field_name, api_field_name)
 
 
+def get_control_range(devcode: Any, param_id: str) -> tuple[float, float, float] | None:
+    """Return the documented ``(min, max, step)`` for a control field.
+
+    ``None`` means no manual-derived range is known for this device, leaving
+    the caller on the API hint / heuristic fallback.
+    """
+    config = get_devcode_config(devcode)
+    if not config:
+        return None
+
+    return config.get("control_ranges", {}).get(param_id)
+
+
 def map_output_priority(devcode: int, api_value: str) -> str:
     """Map output priority value to human-readable format based on devcode."""
     config = get_devcode_config(devcode)

@@ -145,7 +145,7 @@ The integration exposes inverter settings as controllable Home Assistant entitie
 - **Output Voltage / Frequency** - Output electrical configuration
 - **Boot Method, Backlight, Power Saving Mode**, and more
 
-**Number entities** - Numeric settings with min/max ranges from the device:
+**Number entities** - Numeric settings; limits come from the device manual where documented (see `device_support/devcode_*.py`), otherwise from the API hint:
 - **Bulk / Floating / EQ Charging Voltage** (V) - Battery charging voltage targets
 - **Max Charging Current / Max AC Charging Current** (A)
 - **Low DC Protection Voltage** (V) - Per-mode battery protection thresholds
@@ -157,6 +157,15 @@ The integration exposes inverter settings as controllable Home Assistant entitie
 - **Reset User Settings** - Restore factory defaults
 - **Forced EQ Charging** - Trigger an EQ charge cycle
 - **Exit Fault Mode** - Clear fault lock state
+
+**Time entities** - Daily timers for the secondary output and charger priority:
+- **Secondary Output Priority Start / End Time**
+- **Secondary Charging Priority Start / End Time**
+
+**Datetime entity** - The inverter's own clock:
+- **Inverter Date** - Read and set the device's real-time clock. It is converted
+  through Home Assistant's configured time zone, which assumes the inverter is
+  set to the same zone.
 
 ## 🚀 Installation
 

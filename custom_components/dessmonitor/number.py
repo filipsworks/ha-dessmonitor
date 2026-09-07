@@ -16,10 +16,10 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import DessMonitorDataUpdateCoordinator
 from .const import DOMAIN
-from .device_support.device_registry import map_control_field
+from .device_support.device_registry import get_control_range, map_control_field
 from .entity_loader import async_setup_dynamic_entities
 from .number_range import compute_range_and_step, is_hint_range_usable
-from .utils import create_device_info
+from .utils import control_value_kind, create_device_info
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -99,6 +99,10 @@ async def _async_build_number_entities(
             if not param_id:
                 continue
 
+            if control_value_kind(current_values.get(param_id)) is not None:
+                # A timer or timestamp; the time/datetime platforms own it.
+                continue
+
             friendly_name = map_control_field(devcode, name)
             entity_key = f"{device_sn}:{param_id}"
             if entity_key in known_entities:
@@ -151,6 +155,9 @@ class DessMonitorNumber(CoordinatorEntity, NumberEntity):
         self._param_id = param_id
         self._hint = hint
         self._attr_native_unit_of_measurement = unit
+        # A range taken from the device manual beats anything derived from the
+        # API, which reports no hint at all for several collectors.
+        self._documented_range = get_control_range(device_meta.get("devcode"), param_id)
 
         # Initialize identity
         device_alias = device_meta.get("alias", "DessMonitor")
@@ -164,7 +171,9 @@ class DessMonitorNumber(CoordinatorEntity, NumberEntity):
 
         # Parse the current value before evaluating the API range hint.
         current_value = self._coerce_value(initial_value)
-        if not is_hint_range_usable(hint, current_value):
+        if self._documented_range is None and not is_hint_range_usable(
+            hint, current_value
+        ):
             # An uncertain or broad fallback is much easier and safer to use as
             # a text box than as a large slider.
             self._attr_mode = NumberMode.BOX
@@ -195,12 +204,17 @@ class DessMonitorNumber(CoordinatorEntity, NumberEntity):
         return value if math.isfinite(value) else None
 
     def _apply_range_and_step(self, hint: str | None, value: float | None) -> None:
-        """Set min/max/step from the API hint, unit, and current value."""
-        lo, hi, step = compute_range_and_step(
-            self._attr_native_unit_of_measurement,
-            hint,
-            value,
-        )
+        """Set min/max/step from the manual, or the API hint, unit, and value."""
+        lo: float | None
+        hi: float | None
+        if self._documented_range is not None:
+            lo, hi, step = self._documented_range
+        else:
+            lo, hi, step = compute_range_and_step(
+                self._attr_native_unit_of_measurement,
+                hint,
+                value,
+            )
         if lo is not None:
             self._attr_native_min_value = lo
         if hi is not None:
@@ -224,6 +238,11 @@ class DessMonitorNumber(CoordinatorEntity, NumberEntity):
 
     def _expand_range_to_include(self, value: float) -> None:
         """Expand a heuristic range when a newly polled value falls outside it."""
+        if self._documented_range is not None:
+            # The manual's limits are authoritative; a stale poll must not
+            # widen them into values the inverter will reject.
+            return
+
         current_min = getattr(self, "_attr_native_min_value", None)
         current_max = getattr(self, "_attr_native_max_value", None)
         if (current_min is None or value >= current_min) and (
@@ -249,7 +268,9 @@ class DessMonitorNumber(CoordinatorEntity, NumberEntity):
         value = self._value_from_coordinator()
         if value is not None:
             self._attr_native_value = value
-            if not is_hint_range_usable(self._hint, value):
+            if self._documented_range is None and not is_hint_range_usable(
+                self._hint, value
+            ):
                 self._attr_mode = NumberMode.BOX
             self._expand_range_to_include(value)
 
