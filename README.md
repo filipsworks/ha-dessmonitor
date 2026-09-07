@@ -65,7 +65,7 @@ skip account credentials entirely.
 - Preferred-local hybrid mode with automatic cloud and cached-cloud fallback
 - 1-minute updates available with Detailed Data Collection Acceleration (￥144 per collector)
 - Comprehensive sensor data: Power, voltage, current, frequency, temperature, and more
-- **Device configuration control** - Change inverter settings directly from Home Assistant
+- **Device configuration control** - Change inverter settings directly from Home Assistant, as selects, numbers, buttons, timers, and the device clock
 - UI-based configuration - No YAML editing required
 - Automatic device discovery for all inverters on your account
 - Configurable update intervals (1-60 minutes based on your subscription)
@@ -135,7 +135,15 @@ The integration provides several diagnostic sensors that show battery and invert
 - **PV Charging Current** (A) - Current from solar charging
 
 ### Device Configuration Entities
-The integration exposes inverter settings as controllable Home Assistant entities. All current values are read from the device at startup.
+The integration exposes inverter settings as controllable Home Assistant entities. Which settings appear is decided by the device itself: the integration reads the control list the API publishes for your collector and picks a platform per field, so a model exposing more (or fewer) settings needs no code change. All current values are read from the device at startup. Every configuration entity is created in the **Config** entity category, so they sit under the device page rather than in your dashboards.
+
+| API field shape | Home Assistant platform |
+|---|---|
+| Option list with 2+ choices | `select` |
+| Option list with exactly 1 choice | `button` (a one-shot action) |
+| Plain value, `HH:MM` | `time` |
+| Plain value, `YYYY-MM-DD HH:MM:SS` | `datetime` |
+| Any other plain value | `number` |
 
 **Select entities** - Settings with predefined options:
 - **Output Priority** - Power source priority (SBU, SUB, UTI, SOL, SUF)
@@ -145,7 +153,7 @@ The integration exposes inverter settings as controllable Home Assistant entitie
 - **Output Voltage / Frequency** - Output electrical configuration
 - **Boot Method, Backlight, Power Saving Mode**, and more
 
-**Number entities** - Numeric settings; limits come from the device manual where documented (see `device_support/devcode_*.py`), otherwise from the API hint:
+**Number entities** - Numeric settings:
 - **Bulk / Floating / EQ Charging Voltage** (V) - Battery charging voltage targets
 - **Max Charging Current / Max AC Charging Current** (A)
 - **Low DC Protection Voltage** (V) - Per-mode battery protection thresholds
@@ -158,14 +166,23 @@ The integration exposes inverter settings as controllable Home Assistant entitie
 - **Forced EQ Charging** - Trigger an EQ charge cycle
 - **Exit Fault Mode** - Clear fault lock state
 
-**Time entities** - Daily timers for the secondary output and charger priority:
+**Time entities** - Daily timers, where the device supports them:
 - **Secondary Output Priority Start / End Time**
 - **Secondary Charging Priority Start / End Time**
 
 **Datetime entity** - The inverter's own clock:
-- **Inverter Date** - Read and set the device's real-time clock. It is converted
-  through Home Assistant's configured time zone, which assumes the inverter is
-  set to the same zone.
+- **Inverter Date** - Read and set the device's real-time clock. Values are converted through Home Assistant's configured time zone, which assumes the inverter is set to the same zone (the case when it was set from its own LCD).
+
+#### Where the numeric limits come from
+A `number` entity takes its min/max/step from the first of these that is available:
+
+1. **The device manual**, when a `CONTROL_RANGES` table exists for your devcode (see [Device Support Architecture](#-device-support-architecture)). Most accurate, and the only source that can be trusted as a slider.
+2. **The API `hint`**, when the cloud publishes one *and* it brackets the value the device currently reports. Hints have been observed to be wrong or absent, so one that contradicts the live value is discarded.
+3. **A conservative fallback** derived from the unit. The entity switches to a text box rather than a slider, because a guessed range should not look authoritative.
+
+The inverter is always the final validator: a value it rejects surfaces as an error in Home Assistant, and the entity keeps its previous state. Cross-field rules from the manual (for example "floating voltage must not exceed bulk voltage") are deliberately **not** reimplemented here - the device enforces them.
+
+> ⚠️ These entities write directly to your inverter's configuration. Changing charging voltages, cut-off points, or output priority affects real hardware and can shorten battery life or drop your loads. Know what a setting does before you automate it.
 
 ## 🚀 Installation
 
@@ -454,6 +471,7 @@ The integration now includes an extensible device support system:
 ### DevCode System
 - **Automatic Detection**: Devices are automatically classified by their devcode
 - **Device-Specific Mappings**: Sensor names and values are transformed per device type
+- **Documented Control Ranges**: A devcode config may carry a `CONTROL_RANGES` table transcribed from the inverter's manual, giving `number` entities real min/max/step values instead of a guess. Optional - devices without one keep the heuristic fallback
 - **Extensible Architecture**: Easy to add support for new device models
 - **Metadata Tracking**: Device configs list confirmed inverter models via `known_inverters` when available
 
@@ -467,7 +485,7 @@ The integration now includes an extensible device support system:
 - **DevCode 2452**: Known to pair with Axpert (PI18 protocol, rebranded)
 - **DevCode 6422**: Known to pair with Must PH19-6048 EXP
 - **DevCode 6515**: Known to pair with ANENJI ANJ-HHS-11KW-48V-WIFI
-- **DevCode 6544**: Known to pair with ANENJI ANJ-HHS-11KW-48V
+- **DevCode 6544**: Known to pair with ANENJI ANJ-HHS-11KW-48V (includes manual-derived control ranges)
 - **DevCode 2507**: Known to pair with ANENJI ANJ-6200W-48PL-WIFI
 - **Generic Fallback**: Unsupported devices still work with basic functionality (raw sensor titles/values, no mappings)
 

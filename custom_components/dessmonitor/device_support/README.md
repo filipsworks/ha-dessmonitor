@@ -15,12 +15,31 @@ This directory contains collector-specific mappings and configurations for diffe
 - **devcode 2452**: Known to pair with Axpert (PI18 protocol, rebranded)
 - **devcode 6422**: Known to pair with Must PH19-6048 EXP
 - **devcode 6515**: Known to pair with ANENJI ANJ-HHS-11KW-48V-WIFI
-- **devcode 6544**: Known to pair with ANENJI ANJ-HHS-11KW-48V
+- **devcode 6544**: Known to pair with ANENJI ANJ-HHS-11KW-48V (includes `CONTROL_RANGES`)
 - **devcode 2507**: Known to pair with ANENJI ANJ-6200W-48PL-WIFI
 
 ### Device Metadata
 
 Each `devcode_XXXX.py` exposes a `DEVICE_INFO` block that describes the collector. When known, populate the optional `known_inverters` list with inverter model names (e.g., `["POW-HVM6.2K-48V-LIP"]`) so contributors quickly see which hardware has been validated for that devcode.
+
+### Control Ranges (optional)
+
+`CONTROL_RANGES` maps a control field id to the `(min, max, step)` documented in the inverter's manual. The cloud API returns `hint: null` for many collectors, which leaves `number` entities on a guessed range - sometimes narrower than a value the device already reports, so the setting cannot be changed at all.
+
+```python
+CONTROL_RANGES: dict[str, tuple[float, float, float]] = {
+    # F2-20 equalization timeout.
+    "bat_eybond_read_44006": (0.0, 900.0, 5.0),
+}
+```
+
+Guidelines:
+
+- Field ids come from `queryDeviceCtrlField`; the CLI's `analyze` output lists them.
+- Transcribe only the **outer** limits, and note the manual's program number in a comment.
+- Do **not** encode cross-field rules (`Max[A,B]`, "must be below program N"). The inverter rejects an invalid write on its own, and mirroring those rules means several entities reading each other's state for no added protection.
+- The table is per collector *and* per inverter model. Where a manual gives different limits per model (e.g. an 8.5kW and an 11kW variant), pick the one matching `known_inverters` and say so in a comment.
+- Omit the whole table if you don't have the manual. The heuristic fallback still applies.
 
 ## Adding Support for a New Devcode
 

@@ -203,7 +203,33 @@ PARAMETER_SENSOR_NAMES: set[str] = {"Battery percentage"}
 
 The coordinator will fetch `queryDeviceParsEs` in parallel and merge the parameters into the device data (deduplicated). Leave empty otherwise.
 
-### 4.7 Footer (do not modify)
+### 4.7 `CONTROL_RANGES` (optional, needs the manual)
+
+Writable numeric settings reach Home Assistant as `number` entities. Their min/max/step normally come from the API's `hint` field, but many collectors return `hint: null` for every control. The integration then falls back to a conservative guess, which is sometimes *narrower* than the value the device already reports - a control that reads `120` on a 0-900 minute setting is clamped to Home Assistant's 0-100 default and cannot be changed at all.
+
+If you have the inverter's manual, transcribe the documented limits:
+
+```python
+CONTROL_RANGES: dict[str, tuple[float, float, float]] = {
+    # F2-19 equalization duration.
+    "bat_eybond_read_44005": (0.0, 900.0, 5.0),
+    # F2-20 equalization timeout.
+    "bat_eybond_read_44006": (0.0, 900.0, 5.0),
+    # F2-21 equalization interval.
+    "bat_eybond_read_44007": (1.0, 90.0, 1.0),
+}
+```
+
+Keys are control field ids from `queryDeviceCtrlField`, which the CLI's `analyze` output lists alongside each field's name and unit.
+
+Rules of thumb:
+
+- **Outer limits only.** Cite the manual's program number in a comment so the next person can check it.
+- **Do not encode cross-field rules** such as `Max[44V, program 07 + 0.1V]` or "must be below program 09". The inverter rejects an out-of-range write itself and the error surfaces in Home Assistant; mirroring those chains here means several entities reading each other's state on every render for no added protection.
+- **Watch for per-model limits.** A single manual often covers several power ratings (e.g. 10-140A on the 8.5kW model, 10-160A on the 11kW). Pick the one matching `known_inverters` and note the choice in a comment.
+- **Omit the table entirely** if you don't have the manual. The heuristic fallback stays in place, and a partial table is fine - unlisted fields simply keep it.
+
+### 4.8 Footer (do not modify)
 
 ```python
 DEVCODE_CONFIG = {
@@ -213,6 +239,7 @@ DEVCODE_CONFIG = {
     "operating_mode_mapping": OPERATING_MODE_MAPPING,
     "sensor_title_mappings": SENSOR_TITLE_MAPPINGS,
     "value_transformations": VALUE_TRANSFORMATIONS,
+    "control_ranges": CONTROL_RANGES,
     "parameter_sensor_names": PARAMETER_SENSOR_NAMES,
 }
 ```

@@ -97,6 +97,23 @@ PARAMETER_SENSOR_NAMES: set[str] = set()
 # Example:
 # PARAMETER_SENSOR_NAMES: set[str] = {"Battery percentage"}
 
+# Control Ranges (optional)
+# Min/max/step for numeric settings, transcribed from the inverter's manual.
+# The cloud API returns no range hint for many collectors, which leaves number
+# entities on a guessed range - occasionally narrower than a value the device
+# already reports, so the setting cannot be changed at all.
+#
+# Keys are control field ids from queryDeviceCtrlField (the CLI's `analyze`
+# output lists them). Record only the outer limits and cite the manual's
+# program number in a comment; cross-field rules ("must stay below program N")
+# are enforced by the inverter itself and should not be mirrored here.
+# Leave empty if you do not have the manual.
+CONTROL_RANGES: dict[str, tuple[float, float, float]] = {
+    # Example - "id": (min, max, step):
+    # F2-20 equalization timeout.
+    # "bat_eybond_read_44006": (0.0, 900.0, 5.0),
+}
+
 # Export all mappings in standardized structure
 # DO NOT MODIFY THIS PART - just update the mappings above
 DEVCODE_CONFIG = {
@@ -106,5 +123,6 @@ DEVCODE_CONFIG = {
     "operating_mode_mapping": OPERATING_MODE_MAPPING,
     "sensor_title_mappings": SENSOR_TITLE_MAPPINGS,
     "value_transformations": VALUE_TRANSFORMATIONS,
+    "control_ranges": CONTROL_RANGES,
     "parameter_sensor_names": PARAMETER_SENSOR_NAMES,
 }
