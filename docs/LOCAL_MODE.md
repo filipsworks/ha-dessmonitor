@@ -39,6 +39,29 @@ The two connections travel in opposite directions:
 | Callback request | Home Assistant | Collector | UDP `58899` |
 | Local telemetry session | Collector | Home Assistant | TCP `8899` |
 
+### Running in a NAT-mapped container
+
+`network_mode: host` is the simplest setup, but a bridge network with published
+ports works too. Publish **TCP `8899` only** - nothing ever connects inbound on
+UDP `58899`; the callback request leaves the container and its reply returns on
+the same connection tracking entry.
+
+The **Home Assistant LAN IP** setting is the address the collector is told to
+dial, so it stays the *host's* LAN address even though that address does not
+exist inside the container. The listener notices it cannot bind that address,
+logs a warning, and binds `0.0.0.0` instead. Access is unchanged: connections
+are accepted only from the configured collector IPs.
+
+Two things behave differently on a bridge network:
+
+- **The collector scan finds nothing.** Its broadcast stays inside the container
+  network. Enter the collector IP by hand from the router's DHCP list.
+- **The source address must survive the port mapping.** The route is keyed on
+  the collector's exact IP, so a setup that rewrites it (for example
+  `userland-proxy` handling the connection) is rejected. The rejection warning
+  names the address that actually arrived - if it is your Docker gateway rather
+  than the collector, the mapping is rewriting the source.
+
 TCP `8899` must be allowed through the Home Assistant host firewall as well as
 any firewall between VLANs. No internet port forwarding is needed. Restrict
 the rule to each reserved collector address. For example, a UFW host can use
@@ -134,7 +157,8 @@ then start it again; the configured integration reconnects automatically.
   blocked by Wi-Fi client isolation, VLANs, or collector firmware.
 - **Listener cannot start:** reserve TCP port `8899`, check that the configured
   Home Assistant address exists on the host, then use **Reconfigure** if the
-  address changed.
+  address changed. In a container the address belongs to the host instead; the
+  listener falls back to `0.0.0.0` and says so in the log.
 - **Collector never connects:** verify the exact collector IP and both traffic
   directions above. Check the Home Assistant host firewall too. A warning is
   logged after two minutes without a callback.

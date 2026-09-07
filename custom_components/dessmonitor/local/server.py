@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import errno
 import ipaddress
 import logging
+import socket
 import time
 import weakref
 from collections.abc import Callable, Coroutine
@@ -49,14 +51,51 @@ class _SharedCollectorListener:
         return int(self.server.sockets[0].getsockname()[1])
 
     async def start(self) -> None:
-        """Open the physical socket once."""
-        if self.server is None:
-            self.server = await asyncio.start_server(
-                self._route_connection,
-                host=self.host,
-                port=self.port,
-                limit=8192,
+        """Open the physical socket once, falling back to every interface."""
+        if self.server is not None:
+            return
+        try:
+            self.server = await self._listen(self.host)
+        except OSError as err:
+            if err.errno != errno.EADDRNOTAVAIL:
+                raise
+            # The configured address is the one the collector dials, which is
+            # not necessarily an address of the machine Home Assistant runs on:
+            # under NAT port mapping (a Docker bridge network) it belongs to the
+            # host while this process only sees the container's address. Bind
+            # every interface instead. Exposure does not widen, because who gets
+            # served is decided by the exact peer-IP route below, not by the
+            # bind address.
+            _LOGGER.warning(
+                "Local collector address %s is not assigned to this machine; "
+                "listening on 0.0.0.0:%d instead. This is expected when Home "
+                "Assistant runs behind NAT port mapping, and requires TCP %d "
+                "to be forwarded to this container. Connections are still "
+                "accepted only from configured collector IPs.",
+                self.host,
+                self.port,
+                self.port,
             )
+            self.server = await self._listen("0.0.0.0")
+
+    async def _listen(self, host: str) -> asyncio.Server:
+        """Bind one address, keeping both attempts identical apart from it.
+
+        The socket is created here rather than by ``start_server`` because that
+        helper reports a bind failure as a generic ``OSError`` with no ``errno``
+        - which is exactly the detail the caller needs to tell an unassignable
+        address apart from a port that is already taken.
+        """
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            sock.bind((host, self.port))
+        except OSError:
+            sock.close()
+            raise
+        sock.listen(128)
+        sock.setblocking(False)
+        return await asyncio.start_server(self._route_connection, sock=sock, limit=8192)
 
     async def stop(self) -> None:
         """Close the physical socket."""
@@ -78,7 +117,10 @@ class _SharedCollectorListener:
         owner = self.routes.get(normalized_peer)
         if owner is None:
             _LOGGER.warning(
-                "Rejected local collector connection from an unconfigured peer"
+                "Rejected local collector connection from unconfigured peer %s. "
+                "Configure this address as a collector IP if it is your "
+                "collector, or as seen after NAT if a router rewrites it.",
+                peer_ip or "<unknown>",
             )
             await CollectorServer._close_writer(writer)
             return
@@ -323,7 +365,10 @@ class CollectorServer:
 
         if normalized_peer != self.allowed_peer_ip:
             _LOGGER.warning(
-                "Rejected local collector connection from an unconfigured peer"
+                "Rejected local collector connection from peer %s; this entry "
+                "accepts only %s",
+                peer_ip or "<unknown>",
+                self.allowed_peer_ip,
             )
             await self._close_writer(writer)
             return

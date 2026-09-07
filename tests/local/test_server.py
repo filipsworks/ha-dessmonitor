@@ -211,12 +211,8 @@ async def test_servers_share_listener_and_keep_exact_peer_ownership() -> None:
     async def second_on_ready(_identity: CollectorIdentity) -> None:
         second_ready.set()
 
-    first = CollectorServer(
-        "127.0.0.1", port, "127.0.0.1", on_ready=first_on_ready
-    )
-    second = CollectorServer(
-        "127.0.0.1", port, "127.0.0.2", on_ready=second_on_ready
-    )
+    first = CollectorServer("127.0.0.1", port, "127.0.0.1", on_ready=first_on_ready)
+    second = CollectorServer("127.0.0.1", port, "127.0.0.2", on_ready=second_on_ready)
     await first.start()
     await second.start()
     first_reader, first_writer = await asyncio.open_connection(
@@ -255,3 +251,37 @@ async def test_servers_share_listener_and_keep_exact_peer_ownership() -> None:
         await second_writer.wait_closed()
         await first.stop()
         await second.stop()
+
+
+async def test_unassigned_listen_address_falls_back_to_all_interfaces() -> None:
+    """A NAT-mapped container binds every interface, not the advertised IP.
+
+    The configured address is the one the collector dials. Behind port mapping
+    it belongs to the host, so binding it fails and the server must still come
+    up; the exact peer-IP route is what limits who gets served.
+    """
+    server = CollectorServer(
+        host="10.255.255.254",  # RFC1918, but assigned to no local interface
+        port=0,
+        allowed_peer_ip="127.0.0.1",
+    )
+
+    await server.start()
+    try:
+        assert server.host == "10.255.255.254"
+        bound = server._listener.server.sockets[0].getsockname()
+        assert bound[0] == "0.0.0.0"
+        assert bound[1] == server.listening_port != 0
+    finally:
+        await server.stop()
+
+
+async def test_assigned_listen_address_is_bound_as_configured() -> None:
+    """An address this machine really owns is still bound exactly."""
+    server = CollectorServer(host="127.0.0.1", port=0, allowed_peer_ip="127.0.0.2")
+
+    await server.start()
+    try:
+        assert server._listener.server.sockets[0].getsockname()[0] == "127.0.0.1"
+    finally:
+        await server.stop()
